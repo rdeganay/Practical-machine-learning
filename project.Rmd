@@ -1,0 +1,118 @@
+---
+title: "End project of the Coursera Course: Practical Machine Learning by JLHU"
+author: "Romain de Ganay"
+date: "20 février 2017"
+output: html_document
+---
+
+## Intro
+
+> Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+Six young health participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions:   
+* exactly according to the specification (Class A) 
+* throwing the elbows to the front (Class B) 
+* lifting the dumbbell only halfway (Class C) 
+* lowering the dumbbell only halfway (Class D)  
+* throwing the hips to the front (Class E) 
+
+## Data
+
+The training data for this project are available here:  
+
+<https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv>  
+
+The test data are available here:  
+
+<https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv>  
+
+The data for this project come from this source: <http://groupware.les.inf.puc-rio.br/har>.  
+
+
+
+## Importing the data
+
+Reading the data into R:
+```{r}
+testing <- read.csv(file = "pml-testing.csv")
+WLEdataset <- read.csv(file = "pml-training.csv")
+```
+
+The training data set (named WLEdataset for now) contains 19622 observations and 160 variables, while the testing data set contains 20 observations and 160 variables. The "classe" variable in the training set is the outcome to predict. 
+
+## Cleaning the data
+After a quick glance at the data it appears that a lot of the columns contains almost exclusively NA or blank values. We remove them. 
+
+```{r}
+isAnyMissing <- sapply(WLEdataset, function (x) any(is.na(x) | x == ""))
+WLEclean <- WLEdataset[, !isAnyMissing]
+```
+
+We subset the dataset again, only to leave predictor candidates (ie forearm, belt, arm and dumbbell variables) and the outcome variable, classe. 
+
+```{r}
+WLEclean <- WLEclean[, grepl("arm|belt|dumbbell|forearm|classe", colnames(WLEclean))]
+```
+
+And we finally plit the dataset into a 70% training and 30% probing dataset.
+
+```{r}
+require(caret)
+set.seed(1337)
+inTrain <- createDataPartition(WLEclean$classe, p=0.70, list=F)
+training <- WLEclean[inTrain, ]
+probing <- WLEclean[-inTrain, ]
+```
+
+## Fitting a Model
+
+Having decent calculation capabilities on my computer, I choose to fit a Random Forest method with default settings, hoping a very good accuracy considering the number of variables and the size of the sample.  
+The model is calculated using parallel computation. 
+```{r eval=FALSE}
+require(parallel)
+require(doParallel)
+cl <- makeCluster(detectCores())
+registerDoParallel(cl)
+
+ctrl <- trainControl(allowParallel=TRUE)
+system.time(modelRF <- train(classe ~ ., data=training, method="rf", trControl=ctrl))
+
+stopCluster(cl)
+
+```
+
+
+Short exploration of our model, and saving it for later. 
+
+```{r}
+load(file = "modelRF.RData")
+varImp(modelRF)
+modelRF$finalModel
+save(modelRF, file="modelRF.RData")
+```
+
+## Evaluating the model
+
+On the training set:  
+```{r}
+hat <- predict(modelRF, training)
+confusionMatrix(hat, training$classe)
+```
+
+On the probing dataset:  
+```{r}
+hat <- predict(modelRF, probing)
+confusionMatrix(hat, probing$classe)
+```
+
+With an accuracy of 99.35% in the probing set, we estimate the out-of-sample error at 0.65%. 
+
+## Predicting the testing set
+
+```{r}
+hat <- predict(modelRF, testing)
+predictions <- cbind(testing, hat)
+predictions$hat
+```
+
+
